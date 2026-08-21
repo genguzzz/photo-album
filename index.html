@@ -94,11 +94,15 @@
   .viewer .stage {
     flex: 1; position: relative; overflow: hidden;
     display: flex; align-items: center; justify-content: center;
-    touch-action: pan-y;
+    touch-action: pan-x pan-y;
+    cursor: zoom-in;
   }
   .stage .slide {
     position: absolute; inset: 0;
     display: flex; align-items: center; justify-content: center;
+    transition: transform .25s ease;
+  }
+  .stage .slide.zoomed { cursor: zoom-out; }
   }
   .stage .slide img {
     max-width: 100%; max-height: 100%;
@@ -160,10 +164,18 @@
     .item { margin-bottom: 10px; }
     header { padding: 32px 16px 18px; }
     header h1 { font-size: 20px; }
-    .navbtn { display: none; }
     .side { display: none; }
     .info-bar { display: block; }
     .viewer .topbar .idx { margin: 0 auto; }
+    /* 移动端也显示左右箭头引导（半透明、较细） */
+    .navbtn {
+      display: flex;
+      width: 38px; height: 38px;
+      background: rgba(255,255,255,.14);
+      font-size: 20px;
+    }
+    .navbtn.prev { left: 8px; }
+    .navbtn.next { right: 8px; }
   }
 </style>
 </head>
@@ -367,23 +379,107 @@ document.addEventListener('keydown', e => {
   if (e.key === 'ArrowRight') go(cur + 1);
 });
 
-// 触摸滑动
+// 触摸：单指滑动翻页 + 双指捏合缩放 + 双击放大 + 放大后拖动
 let touchX = 0, touchY = 0, dragging = false;
+let pinchDist = 0, pinchStartZoom = 1, zoomLevel = 1;
+const MIN_ZOOM = 1, MAX_ZOOM = 4;
+
+function setZoom(level) {
+  zoomLevel = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, level));
+  const img = slide.querySelector('img');
+  if (!img) return;
+  if (zoomLevel === 1) {
+    slide.classList.remove('zoomed');
+    slide.style.transform = '';
+  } else {
+    slide.classList.add('zoomed');
+    slide.style.transform = 'scale(' + zoomLevel + ')';
+  }
+}
+
+function pinchDistOf(e) {
+  const dx = e.touches[0].clientX - e.touches[1].clientX;
+  const dy = e.touches[0].clientY - e.touches[1].clientY;
+  return Math.hypot(dx, dy);
+}
+
 stage.addEventListener('touchstart', e => {
-  const t = e.touches[0];
-  touchX = t.clientX; touchY = t.clientY;
-  dragging = true;
+  if (e.touches.length === 2) {
+    pinchDist = pinchDistOf(e);
+    pinchStartZoom = zoomLevel;
+    dragging = false;
+    return;
+  }
+  if (e.touches.length === 1) {
+    const t = e.touches[0];
+    touchX = t.clientX; touchY = t.clientY;
+    dragging = true;
+  }
 }, { passive: true });
+
 stage.addEventListener('touchmove', e => {
-  if (!dragging) return;
+  if (e.touches.length === 2) {
+    e.preventDefault();
+    const d = pinchDistOf(e);
+    if (pinchDist > 0) {
+      setZoom(pinchStartZoom * (d / pinchDist));
+    }
+    return;
+  }
+  if (!dragging || e.touches.length !== 1) return;
+  if (zoomLevel > 1) {
+    // 放大状态：单指拖动图片平移
+    e.preventDefault();
+    const t = e.touches[0];
+    const dx = t.clientX - touchX;
+    const dy = t.clientY - touchY;
+    const tx = slide.dataset.tx ? parseFloat(slide.dataset.tx) : 0;
+    const ty = slide.dataset.ty ? parseFloat(slide.dataset.ty) : 0;
+    slide.dataset.tx = tx + dx; slide.dataset.ty = ty + dy;
+    slide.style.transform = 'scale(' + zoomLevel + ') translate(' + slide.dataset.tx + 'px,' + slide.dataset.ty + 'px)';
+    touchX = t.clientX; touchY = t.clientY;
+    return;
+  }
   const dx = e.touches[0].clientX - touchX;
   const dy = e.touches[0].clientY - touchY;
   if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
     dragging = false;
     if (dx < 0) go(cur + 1); else go(cur - 1);
   }
-}, { passive: true });
-stage.addEventListener('touchend', () => { dragging = false; });
+}, { passive: false });
+
+stage.addEventListener('touchend', () => {
+  dragging = false;
+  pinchDist = 0;
+});
+
+// 双击放大/还原（桌面）
+stage.addEventListener('dblclick', e => {
+  e.preventDefault();
+  setZoom(zoomLevel > 1 ? 1 : 2.5);
+});
+
+// 双击放大/还原（移动端 tap 检测）
+let lastTap = 0;
+stage.addEventListener('touchend', e => {
+  if (e.touches.length === 0 && Date.now() - lastTap < 300) {
+    e.preventDefault();
+    setZoom(zoomLevel > 1 ? 1 : 2.5);
+    lastTap = 0;
+    return;
+  }
+  lastTap = Date.now();
+});
+
+// 切图时重置缩放
+const origGo = go;
+go = function(i) {
+  zoomLevel = 1;
+  slide.classList.remove('zoomed');
+  slide.style.transform = '';
+  slide.dataset.tx = 0; slide.dataset.ty = 0;
+  origGo(i);
+};
 </script>
 </body>
 </html>
