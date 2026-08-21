@@ -316,6 +316,7 @@ function renderViewer(p) {
 
 function openViewer(i) {
   cur = i;
+  resetZoom();
   const p = PHOTOS[cur];
   slide.innerHTML = '';
   const img = document.createElement('img');
@@ -332,6 +333,7 @@ function openViewer(i) {
 }
 
 function closeViewer() {
+  resetZoom();
   viewer.classList.remove('show');
   document.body.style.overflow = '';
 }
@@ -395,6 +397,13 @@ function setZoom(level) {
     slide.classList.add('zoomed');
     slide.style.transform = 'scale(' + zoomLevel + ')';
   }
+}
+
+function resetZoom() {
+  zoomLevel = 1;
+  slide.classList.remove('zoomed');
+  slide.style.transform = '';
+  slide.dataset.tx = 0; slide.dataset.ty = 0;
 }
 
 function pinchDistOf(e) {
@@ -474,10 +483,7 @@ stage.addEventListener('touchend', e => {
 // 切图时重置缩放
 const origGo = go;
 go = function(i) {
-  zoomLevel = 1;
-  slide.classList.remove('zoomed');
-  slide.style.transform = '';
-  slide.dataset.tx = 0; slide.dataset.ty = 0;
+  resetZoom();
   origGo(i);
 };
 </script>
